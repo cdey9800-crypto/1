@@ -206,108 +206,162 @@ const CTA = { label:"Continue", url:"" };
 const AUTO_ADVANCE_MS = 0;
 /* ========================================================= */
 
+/* ---- 3. ROTATION ON RETURN ----
+   Each time the visitor comes back from an article, the image list and the
+   link list are rotated by these steps, so the reel opens on a different
+   image and the image->article pairing changes.
+   Set both to 0 to switch rotation off. */
+const IMAGE_ROTATE_STEP = 7;   /* 15 images, step 7 -> 15 different starts */
+const LINK_ROTATE_STEP  = 2;   /* 5 links, step 2 -> pairing changes too   */
+/* ========================================================= */
+
 const reel = document.getElementById('reel');
 const rail = document.getElementById('rail');
 const hint = document.getElementById('hint');
 const cur  = document.querySelector('#count b');
 document.getElementById('total').textContent = SLIDES.length;
 
-SLIDES.forEach((src,i)=>{
-  const sec = document.createElement('section');
-  sec.className = 'slide';
-  sec.dataset.index = i;
+/* --- how many times has this visitor already left and come back? --- */
+const VISIT_KEY = 'reel_visit';
+function getVisit(){
+  try { return parseInt(sessionStorage.getItem(VISIT_KEY) || '0', 10) || 0; }
+  catch(e){ return 0; }   /* private mode / storage blocked -> no rotation */
+}
+function bumpVisit(){
+  try { sessionStorage.setItem(VISIT_KEY, String(getVisit() + 1)); } catch(e){}
+}
 
-  const back = document.createElement('div');
-  back.className = 'backdrop';
+/* rotate an array left by n positions */
+function rotate(arr, n){
+  if(!arr.length || !n) return arr.slice();
+  const k = ((n % arr.length) + arr.length) % arr.length;
+  return arr.slice(k).concat(arr.slice(0, k));
+}
 
-  const skel = document.createElement('div');
-  skel.className = 'skeleton';
+let slides = [], dots = [], active = 0, timer = null;
+let loader = null, tracker = null, hintTimer = null;
 
-  const img = document.createElement('img');
-  img.alt = '';
-  img.decoding = 'async';
-  img.dataset.src = src;
-  if(i < 2){ img.src = src; }            // first two load immediately
-  img.addEventListener('load', ()=>{
-    img.classList.add('ready');
-    sec.classList.add('loaded');
-    back.style.backgroundImage = `url("${img.currentSrc||img.src}")`;
+function build(){
+  const visit  = getVisit();
+  const images = rotate(SLIDES, visit * IMAGE_ROTATE_STEP);
+  const links  = rotate(LINKS,  visit * LINK_ROTATE_STEP);
+
+  /* tear down the previous render */
+  if(loader)  loader.disconnect();
+  if(tracker) tracker.disconnect();
+  clearTimeout(timer);
+  clearTimeout(hintTimer);
+  reel.innerHTML = '';
+  rail.innerHTML = '';
+
+  images.forEach((src,i)=>{
+    const sec = document.createElement('section');
+    sec.className = 'slide';
+    sec.dataset.index = i;
+
+    const back = document.createElement('div');
+    back.className = 'backdrop';
+
+    const skel = document.createElement('div');
+    skel.className = 'skeleton';
+
+    const img = document.createElement('img');
+    img.alt = '';
+    img.decoding = 'async';
+    img.dataset.src = src;
+    if(i < 2){ img.src = src; }            // first two load immediately
+    img.addEventListener('load', ()=>{
+      img.classList.add('ready');
+      sec.classList.add('loaded');
+      back.style.backgroundImage = `url("${img.currentSrc||img.src}")`;
+    });
+    /* already-cached images fire load before this listener attaches */
+    if(img.complete && img.naturalWidth){
+      img.classList.add('ready');
+      sec.classList.add('loaded');
+      back.style.backgroundImage = `url("${img.currentSrc||img.src}")`;
+    }
+
+    sec.append(back, skel, img);
+
+    /* full-slide click layer -> article */
+    if(links.length){
+      const hit = document.createElement('a');
+      hit.className = 'hit';
+      hit.href = links[i % links.length];
+      hit.target = LINK_TARGET;
+      hit.rel = 'noopener';
+      hit.setAttribute('aria-label','Open article');
+      let sy = 0, sx = 0;
+      hit.addEventListener('touchstart', e=>{
+        sy = e.touches[0].clientY; sx = e.touches[0].clientX;
+      }, {passive:true});
+      hit.addEventListener('touchend', e=>{
+        const t = e.changedTouches[0];
+        /* a swipe moved more than 12px -> not a tap, cancel the link */
+        if(Math.abs(t.clientY - sy) > 12 || Math.abs(t.clientX - sx) > 12){
+          e.preventDefault();
+        }
+      });
+      /* count this as a visit, so the next view rotates */
+      hit.addEventListener('click', ()=>{ bumpVisit(); });
+      sec.appendChild(hit);
+    }
+
+    if(CTA.url && i === images.length-1){
+      const a = document.createElement('a');
+      a.className = 'cta';
+      a.href = CTA.url;
+      a.textContent = CTA.label;
+      a.addEventListener('click', ()=>{ bumpVisit(); });
+      sec.appendChild(a);
+    }
+
+    reel.appendChild(sec);
+
+    const dot = document.createElement('i');
+    if(i===0) dot.classList.add('on');
+    rail.appendChild(dot);
   });
 
-  sec.append(back, skel, img);
+  slides = [...reel.children];
+  dots   = [...rail.children];
+  active = 0;
+  cur.textContent = '1';
 
-  /* full-slide click layer -> article */
-  if(LINKS.length){
-    const hit = document.createElement('a');
-    hit.className = 'hit';
-    hit.href = LINKS[i % LINKS.length];
-    hit.target = LINK_TARGET;
-    hit.rel = 'noopener';
-    hit.setAttribute('aria-label','Open article');
-    let sy = 0, sx = 0;
-    hit.addEventListener('touchstart', e=>{
-      sy = e.touches[0].clientY; sx = e.touches[0].clientX;
-    }, {passive:true});
-    hit.addEventListener('touchend', e=>{
-      const t = e.changedTouches[0];
-      /* a swipe moved more than 12px -> not a tap, cancel the link */
-      if(Math.abs(t.clientY - sy) > 12 || Math.abs(t.clientX - sx) > 12){
-        e.preventDefault();
+  /* lazy load with a 2-slide lookahead */
+  loader = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(!e.isIntersecting) return;
+      const i = +e.target.dataset.index;
+      for(let k=i; k<=i+2 && k<slides.length; k++){
+        const im = slides[k].querySelector('img');
+        if(im && !im.src) im.src = im.dataset.src;
       }
     });
-    sec.appendChild(hit);
-  }
+  },{ root:reel, rootMargin:'150% 0px' });
+  slides.forEach(s=>loader.observe(s));
 
-  if(CTA.url && i === SLIDES.length-1){
-    const a = document.createElement('a');
-    a.className = 'cta';
-    a.href = CTA.url;
-    a.textContent = CTA.label;
-    sec.appendChild(a);
-  }
+  /* active-slide tracking */
+  tracker = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.intersectionRatio < 0.6) return;
+      active = +e.target.dataset.index;
+      cur.textContent = active + 1;
+      dots.forEach((d,i)=>d.classList.toggle('on', i===active));
+      if(active > 0) hint.classList.add('gone');
+      schedule();
+    });
+  },{ root:reel, threshold:[0.6] });
+  slides.forEach(s=>tracker.observe(s));
 
-  reel.appendChild(sec);
+  /* back to the top and show the hint again */
+  reel.scrollTop = 0;
+  hint.classList.remove('gone');
+  hintTimer = setTimeout(()=>hint.classList.add('gone'), 5000);
 
-  const dot = document.createElement('i');
-  if(i===0) dot.classList.add('on');
-  rail.appendChild(dot);
-});
-
-const slides = [...reel.children];
-const dots   = [...rail.children];
-
-/* lazy load with a 2-slide lookahead */
-const loader = new IntersectionObserver((entries)=>{
-  entries.forEach(e=>{
-    if(!e.isIntersecting) return;
-    const i = +e.target.dataset.index;
-    for(let k=i; k<=i+2 && k<slides.length; k++){
-      const im = slides[k].querySelector('img');
-      if(im && !im.src) im.src = im.dataset.src;
-    }
-  });
-},{ root:reel, rootMargin:'150% 0px' });
-slides.forEach(s=>loader.observe(s));
-
-/* active-slide tracking */
-let active = 0, timer = null;
-const tracker = new IntersectionObserver((entries)=>{
-  entries.forEach(e=>{
-    if(e.intersectionRatio < 0.6) return;
-    active = +e.target.dataset.index;
-    cur.textContent = active + 1;
-    dots.forEach((d,i)=>d.classList.toggle('on', i===active));
-    if(active > 0) hint.classList.add('gone');
-    schedule();
-  });
-},{ root:reel, threshold:[0.6] });
-slides.forEach(s=>tracker.observe(s));
-
-/* keyboard */
-window.addEventListener('keydown', ev=>{
-  if(ev.key==='ArrowDown' || ev.key==='PageDown' || ev.key===' '){ ev.preventDefault(); go(active+1); }
-  if(ev.key==='ArrowUp'   || ev.key==='PageUp'){ ev.preventDefault(); go(active-1); }
-});
+  schedule();
+}
 
 function go(i){
   if(i < 0 || i >= slides.length) return;
@@ -322,9 +376,23 @@ function schedule(){
     go(active + 1 < slides.length ? active + 1 : 0);
   }, AUTO_ADVANCE_MS);
 }
-schedule();
 
-setTimeout(()=>hint.classList.add('gone'), 5000);
+/* keyboard */
+window.addEventListener('keydown', ev=>{
+  if(ev.key==='ArrowDown' || ev.key==='PageDown' || ev.key===' '){ ev.preventDefault(); go(active+1); }
+  if(ev.key==='ArrowUp'   || ev.key==='PageUp'){ ev.preventDefault(); go(active-1); }
+});
+
+/* first render */
+build();
+
+/* returning from an article:
+   - persisted = true  -> restored from the browser's back/forward cache
+   - persisted = false -> a normal reload, already handled by build() above */
+window.addEventListener('pageshow', (e)=>{
+  if(e.persisted) build();
+});
+
 </script>
 </body>
 </html>
