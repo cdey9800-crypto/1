@@ -5,6 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#0a0a0a">
 <title>Photo Reel</title>
+
+<!-- ==== GA4: replace G-XXXXXXXXXX with your Measurement ID ==== -->
+<script>window.GA4_ID = "G-C9SS8TTNZW";</script>
+<script>
+  if(window.GA4_ID && window.GA4_ID.indexOf('G-') === 0){
+    const g = document.createElement('script');
+    g.async = true;
+    g.src = 'https://www.googletagmanager.com/gtag/js?id=' + window.GA4_ID;
+    document.head.appendChild(g);
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function(){ dataLayer.push(arguments); };
+    gtag('js', new Date());
+    gtag('config', window.GA4_ID, { send_page_view: false });
+  }
+</script>
+<!-- =========================================================== -->
 <style>
 :root{
   --orange:#FF8C00;
@@ -295,6 +311,27 @@ const cur  = document.querySelector('#count b');
 document.getElementById('total').textContent = SLIDES.length;
 
 /* --- how many times has this visitor already left and come back? --- */
+/* ---- 5. TRACKING ----
+   How long a slide must stay on screen before it counts as a view.
+   Stops a fast swipe-past from inflating your view numbers. */
+const VIEW_DWELL_MS = 800;
+
+/* pull "image 7.jpg" out of the full URL so reports are readable */
+function imageName(url){
+  try { return decodeURIComponent(url.split('/').pop()); }
+  catch(e){ return url; }
+}
+function articleName(url){
+  try {
+    const seg = decodeURIComponent(url).split('/').filter(Boolean).pop() || '';
+    return seg.slice(0, 60);
+  } catch(e){ return url; }
+}
+function track(name, params){
+  if(typeof window.gtag !== 'function') return;
+  window.gtag('event', name, Object.assign({ transport_type:'beacon' }, params || {}));
+}
+
 /* ---------- idle countdown engine ---------- */
 const tickEl  = document.getElementById('tick');
 const barEl   = document.getElementById('bar');
@@ -343,9 +380,21 @@ function idleFire(){
   idleStop();
   const link = slides[active] && slides[active].querySelector('.hit');
   if(!link) return;
+  const img = slides[active].querySelector('img');
+  track('auto_redirect', {
+    image_name:   img ? imageName(img.dataset.src || img.src) : '',
+    slide_index:  active + 1,
+    visit_number: getVisit(),
+    article_name: articleName(link.href)
+  });
   bumpVisit();                                 /* so the next view rotates */
   window.location.href = link.href;
 }
+
+/* how far they got before leaving */
+window.addEventListener('pagehide', ()=>{
+  track('reel_depth', { depth: maxDepth, visit_number: getVisit() });
+});
 
 /* tapping the countdown goes straight there */
 tickEl.addEventListener('click', idleFire);
@@ -372,6 +421,7 @@ function rotate(arr, n){
 
 let slides = [], dots = [], active = 0, timer = null;
 let loader = null, tracker = null, hintTimer = null;
+let seen = new Set(), viewTimer = null, maxDepth = 1;
 
 function build(){
   const visit  = getVisit();
@@ -380,6 +430,10 @@ function build(){
 
   /* tear down the previous render */
   idleStop();
+  clearTimeout(viewTimer);
+  seen = new Set();
+  maxDepth = 1;
+  track('reel_view', { visit_number: visit, total_images: images.length });
   if(loader)  loader.disconnect();
   if(tracker) tracker.disconnect();
   clearTimeout(timer);
@@ -437,7 +491,15 @@ function build(){
         }
       });
       /* count this as a visit, so the next view rotates */
-      hit.addEventListener('click', ()=>{ bumpVisit(); });
+      hit.addEventListener('click', ()=>{
+        track('image_click', {
+          image_name:   imageName(src),
+          slide_index:  i + 1,
+          visit_number: visit,
+          article_name: articleName(hit.href)
+        });
+        bumpVisit();
+      });
       sec.appendChild(hit);
     }
 
@@ -483,6 +545,21 @@ function build(){
       cur.textContent = active + 1;
       dots.forEach((d,i)=>d.classList.toggle('on', i===active));
       if(active > 0) hint.classList.add('gone');
+      if(active + 1 > maxDepth) maxDepth = active + 1;
+
+      /* count a view only after the slide has been held on screen */
+      clearTimeout(viewTimer);
+      const idx = active;
+      viewTimer = setTimeout(()=>{
+        if(idx !== active || seen.has(idx)) return;
+        seen.add(idx);
+        track('image_view', {
+          image_name:   imageName(images[idx]),
+          slide_index:  idx + 1,
+          visit_number: visit
+        });
+      }, VIEW_DWELL_MS);
+
       if(RESET_TIMER_ON_SWIPE && idleRunning) idleStart();
       schedule();
     });
