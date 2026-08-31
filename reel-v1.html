@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0a0a0a">
+<title>Photo Reel</title>
+<style>
+:root{
+  --orange:#FF8C00;
+  --warm:#8B5E00;
+  --bg:#0a0a0a;
+  --ink:#f5f2ec;
+  --muted:rgba(245,242,236,.62);
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);overscroll-behavior-y:none}
+body{overflow:hidden}
+
+/* ---------- scroll container ---------- */
+#reel{
+  height:100dvh;
+  overflow-y:scroll;
+  scroll-snap-type:y mandatory;
+  scroll-behavior:auto;
+  scrollbar-width:none;
+}
+#reel::-webkit-scrollbar{display:none}
+
+.slide{
+  position:relative;
+  height:100dvh;
+  scroll-snap-align:start;
+  scroll-snap-stop:always;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  background:#000;
+}
+.slide img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+  opacity:0;
+  transition:opacity .35s ease;
+}
+.slide img.ready{opacity:1}
+
+/* blurred backdrop so portrait images never sit on dead black */
+.slide .backdrop{
+  position:absolute;inset:-8%;
+  background-size:cover;background-position:center;
+  filter:blur(34px) saturate(1.2) brightness(.42);
+  transform:scale(1.1);
+}
+
+/* skeleton while the image is still coming */
+.slide .skeleton{
+  position:absolute;inset:0;
+  background:linear-gradient(100deg,#121212 30%,#1c1712 50%,#121212 70%);
+  background-size:220% 100%;
+  animation:shimmer 1.4s linear infinite;
+}
+.slide.loaded .skeleton{display:none}
+@keyframes shimmer{to{background-position:-120% 0}}
+
+/* ---------- caption ---------- */
+.caption{
+  position:absolute;
+  left:0;right:0;bottom:0;
+  padding:96px 76px 34px 20px;
+  background:linear-gradient(to top,rgba(0,0,0,.86) 12%,rgba(0,0,0,.45) 46%,transparent);
+  pointer-events:none;
+}
+.caption h2{
+  font-size:clamp(19px,5.2vw,25px);
+  line-height:1.22;
+  font-weight:650;
+  letter-spacing:-.015em;
+  max-width:22ch;
+  text-shadow:0 1px 14px rgba(0,0,0,.55);
+}
+.caption p{
+  margin-top:7px;
+  font-size:14px;
+  line-height:1.45;
+  color:var(--muted);
+  max-width:34ch;
+}
+.caption .tick{
+  display:inline-block;
+  width:26px;height:2px;
+  background:var(--orange);
+  margin-bottom:12px;
+}
+
+/* ---------- CTA ---------- */
+.cta{
+  pointer-events:auto;
+  margin-top:16px;
+  display:inline-block;
+  padding:12px 22px;
+  background:#111;
+  color:var(--ink);
+  border:1px solid var(--orange);
+  border-radius:999px;
+  font:inherit;font-size:15px;font-weight:600;
+  cursor:pointer;
+  text-decoration:none;
+}
+.cta:active{background:#1a1206}
+
+/* ---------- progress rail ---------- */
+#rail{
+  position:fixed;
+  right:9px;
+  top:50%;
+  transform:translateY(-50%);
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  z-index:5;
+  pointer-events:none;
+}
+#rail i{
+  display:block;
+  width:3px;
+  height:15px;
+  border-radius:2px;
+  background:rgba(245,242,236,.24);
+  transition:background .25s ease,height .25s ease;
+}
+#rail i.on{background:var(--orange);height:26px}
+
+/* ---------- counter ---------- */
+#count{
+  position:fixed;
+  top:calc(env(safe-area-inset-top,0px) + 14px);
+  right:14px;
+  z-index:5;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+  color:var(--muted);
+  background:rgba(0,0,0,.42);
+  backdrop-filter:blur(6px);
+  padding:5px 10px;
+  border-radius:999px;
+}
+#count b{color:var(--ink);font-weight:600}
+
+/* ---------- swipe hint (first slide only) ---------- */
+#hint{
+  position:fixed;
+  left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+  transform:translateX(-50%);
+  z-index:6;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  font-size:12.5px;color:var(--muted);
+  transition:opacity .4s ease;
+}
+#hint.gone{opacity:0;pointer-events:none}
+#hint svg{animation:nudge 1.6s ease-in-out infinite}
+@keyframes nudge{0%,100%{transform:translateY(3px)}50%{transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){
+  #hint svg,.slide .skeleton{animation:none}
+  .slide img{transition:none}
+}
+</style>
+</head>
+<body>
+
+<div id="reel" tabindex="0" aria-label="Photo reel"></div>
+
+<div id="count"><b>1</b> / <span id="total">0</span></div>
+<nav id="rail" aria-hidden="true"></nav>
+
+<div id="hint">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF8C00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+  <span>Swipe up</span>
+</div>
+
+<script>
+/* =========================================================
+   1. EDIT ONLY THIS BLOCK
+   Swap src for your own URLs, e.g.
+   https://instantchatroom.org/reel/01.jpg
+   ========================================================= */
+const SLIDES = [
+  { src:"https://picsum.photos/id/1015/1080/1920", title:"The river bend at first light",  sub:"Slide one — replace with your own image and copy." },
+  { src:"https://picsum.photos/id/1025/1080/1920", title:"He waited by the door all week",   sub:"Every image is one full screen tall." },
+  { src:"https://picsum.photos/id/1039/1080/1920", title:"Nobody knew the trail went here",  sub:"Swipe, scroll or use the arrow keys." },
+  { src:"https://picsum.photos/id/1043/1080/1920", title:"Rooftops before the rain",         sub:"Images load two ahead so it never stalls." },
+  { src:"https://picsum.photos/id/1057/1080/1920", title:"Where the coast finally opens",    sub:"Add as many as you want to this list." },
+  { src:"https://picsum.photos/id/1069/1080/1920", title:"Last light on the way back",       sub:"The button below is on the final slide." }
+];
+
+/* CTA on the last slide. Set URL to "" to hide it entirely. */
+const CTA = { label:"Read the full story", url:"" };
+
+/* Optional: auto-advance. 0 = off. e.g. 6000 = move on after 6s. */
+const AUTO_ADVANCE_MS = 0;
+/* ========================================================= */
+
+const reel  = document.getElementById('reel');
+const rail  = document.getElementById('rail');
+const hint  = document.getElementById('hint');
+const cur   = document.querySelector('#count b');
+document.getElementById('total').textContent = SLIDES.length;
+
+/* build slides */
+SLIDES.forEach((s,i)=>{
+  const sec = document.createElement('section');
+  sec.className = 'slide';
+  sec.dataset.index = i;
+
+  const back = document.createElement('div');
+  back.className = 'backdrop';
+
+  const skel = document.createElement('div');
+  skel.className = 'skeleton';
+
+  const img = document.createElement('img');
+  img.alt = s.title || '';
+  img.decoding = 'async';
+  img.dataset.src = s.src;
+  if(i < 2){ img.src = s.src; }          // first two load immediately
+  img.addEventListener('load', ()=>{
+    img.classList.add('ready');
+    sec.classList.add('loaded');
+    back.style.backgroundImage = `url("${img.currentSrc||img.src}")`;
+  });
+
+  const cap = document.createElement('div');
+  cap.className = 'caption';
+  cap.innerHTML = `<span class="tick"></span><h2></h2><p></p>`;
+  cap.querySelector('h2').textContent = s.title || '';
+  cap.querySelector('p').textContent  = s.sub || '';
+
+  if(CTA.url && i === SLIDES.length-1){
+    const a = document.createElement('a');
+    a.className = 'cta';
+    a.href = CTA.url;
+    a.textContent = CTA.label;
+    cap.appendChild(a);
+  }
+
+  sec.append(back, skel, img, cap);
+  reel.appendChild(sec);
+
+  const dot = document.createElement('i');
+  if(i===0) dot.classList.add('on');
+  rail.appendChild(dot);
+});
+
+const slides = [...reel.children];
+const dots   = [...rail.children];
+
+/* lazy load with a 2-slide lookahead */
+const loader = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    if(!e.isIntersecting) return;
+    const i = +e.target.dataset.index;
+    for(let k=i; k<=i+2 && k<slides.length; k++){
+      const im = slides[k].querySelector('img');
+      if(im && !im.src) im.src = im.dataset.src;
+    }
+  });
+},{ root:reel, rootMargin:'150% 0px' });
+slides.forEach(s=>loader.observe(s));
+
+/* active-slide tracking */
+let active = 0, timer = null;
+const tracker = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    if(e.intersectionRatio < 0.6) return;
+    active = +e.target.dataset.index;
+    cur.textContent = active + 1;
+    dots.forEach((d,i)=>d.classList.toggle('on', i===active));
+    if(active > 0) hint.classList.add('gone');
+    schedule();
+  });
+},{ root:reel, threshold:[0.6] });
+slides.forEach(s=>tracker.observe(s));
+
+/* keyboard */
+window.addEventListener('keydown', ev=>{
+  if(ev.key==='ArrowDown' || ev.key==='PageDown' || ev.key===' '){ ev.preventDefault(); go(active+1); }
+  if(ev.key==='ArrowUp'   || ev.key==='PageUp'){ ev.preventDefault(); go(active-1); }
+});
+
+function go(i){
+  if(i < 0 || i >= slides.length) return;
+  slides[i].scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+/* optional auto-advance */
+function schedule(){
+  clearTimeout(timer);
+  if(!AUTO_ADVANCE_MS) return;
+  timer = setTimeout(()=>{
+    go(active + 1 < slides.length ? active + 1 : 0);
+  }, AUTO_ADVANCE_MS);
+}
+schedule();
+
+/* hide hint after a few seconds regardless */
+setTimeout(()=>hint.classList.add('gone'), 5000);
+</script>
+</body>
+</html>
