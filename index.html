@@ -77,6 +77,39 @@ body{overflow:hidden}
   cursor:pointer;
 }
 
+/* ---------- idle countdown ---------- */
+#tick{
+  position:fixed;
+  left:50%;
+  bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+  transform:translateX(-50%);
+  z-index:7;
+  display:none;
+  align-items:center;
+  gap:9px;
+  padding:8px 15px 8px 9px;
+  background:rgba(0,0,0,.52);
+  backdrop-filter:blur(8px);
+  border:1px solid rgba(255,140,0,.5);
+  border-radius:999px;
+  color:var(--ink);
+  font-size:13.5px;
+  line-height:1;
+  cursor:pointer;
+}
+#tick.show{display:flex}
+#tick .ring{position:relative;width:24px;height:24px;flex:none}
+#tick .ring svg{transform:rotate(-90deg);display:block}
+#tick .ring circle{fill:none;stroke-width:2.5}
+#tick .ring .bg{stroke:rgba(245,242,236,.2)}
+#tick .ring .fg{stroke:var(--orange);stroke-linecap:round;transition:stroke-dashoffset .25s linear}
+#tick .num{
+  position:absolute;inset:0;
+  display:grid;place-items:center;
+  font-size:10.5px;font-weight:650;
+  font-variant-numeric:tabular-nums;
+}
+
 /* ---------- CTA (last slide only, optional) ---------- */
 .cta{
   position:absolute;
@@ -162,6 +195,17 @@ body{overflow:hidden}
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF8C00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
 </div>
 
+<div id="tick" role="button" tabindex="0">
+  <span class="ring">
+    <svg width="24" height="24" viewBox="0 0 24 24">
+      <circle class="bg" cx="12" cy="12" r="10"></circle>
+      <circle class="fg" cx="12" cy="12" r="10" stroke-dasharray="62.83" stroke-dashoffset="0"></circle>
+    </svg>
+    <span class="num">12</span>
+  </span>
+  <span>Continuing to the guide</span>
+</div>
+
 <script>
 /* =========================================================
    1. EDIT ONLY THIS BLOCK — just image URLs now
@@ -215,6 +259,16 @@ const IMAGE_ROTATE_STEP = 7;   /* 15 images, step 7 -> 15 different starts */
 const LINK_ROTATE_STEP  = 2;   /* 5 links, step 2 -> pairing changes too   */
 /* ========================================================= */
 
+/* ---- 4. IDLE REDIRECT ----
+   If the visitor taps nothing, send them to the article linked to the image
+   they are currently on. First number = first visit, second = every return.
+   Set to [] to switch the idle redirect off completely. */
+const IDLE_REDIRECT_MS = [12000, 8000];
+
+/* Clock keeps running while they swipe. true = restart it on every swipe. */
+const RESET_TIMER_ON_SWIPE = false;
+/* ========================================================= */
+
 const reel = document.getElementById('reel');
 const rail = document.getElementById('rail');
 const hint = document.getElementById('hint');
@@ -222,6 +276,57 @@ const cur  = document.querySelector('#count b');
 document.getElementById('total').textContent = SLIDES.length;
 
 /* --- how many times has this visitor already left and come back? --- */
+/* ---------- idle countdown engine ---------- */
+const tickEl  = document.getElementById('tick');
+const tickNum = tickEl.querySelector('.num');
+const tickArc = tickEl.querySelector('.fg');
+const ARC = 62.83;                 /* circumference of r=10 */
+let idleTimer = null, idleTotal = 0, idleLeft = 0, idleRunning = false;
+
+function idleStop(){
+  clearInterval(idleTimer);
+  idleTimer = null;
+  idleRunning = false;
+  tickEl.classList.remove('show');
+}
+
+function idleStart(){
+  idleStop();
+  if(!IDLE_REDIRECT_MS.length || !LINKS.length) return;
+  const v = getVisit();
+  idleTotal = IDLE_REDIRECT_MS[Math.min(v, IDLE_REDIRECT_MS.length - 1)];
+  idleLeft  = idleTotal;
+  idleRunning = true;
+  tickEl.classList.add('show');
+  paint();
+  idleTimer = setInterval(()=>{
+    if(document.hidden) return;               /* pause in a background tab */
+    idleLeft -= 250;
+    if(idleLeft <= 0){ idleFire(); return; }
+    paint();
+  }, 250);
+}
+
+function paint(){
+  tickNum.textContent = Math.ceil(idleLeft / 1000);
+  tickArc.style.strokeDashoffset = ARC * (1 - idleLeft / idleTotal);
+}
+
+function idleFire(){
+  idleStop();
+  const link = slides[active] && slides[active].querySelector('.hit');
+  if(!link) return;
+  bumpVisit();                                 /* so the next view rotates */
+  window.location.href = link.href;
+}
+
+/* tapping the countdown goes straight there */
+tickEl.addEventListener('click', idleFire);
+tickEl.addEventListener('keydown', e=>{
+  if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); idleFire(); }
+});
+
+/* ---------- rotation helpers ---------- */
 const VISIT_KEY = 'reel_visit';
 function getVisit(){
   try { return parseInt(sessionStorage.getItem(VISIT_KEY) || '0', 10) || 0; }
@@ -247,6 +352,7 @@ function build(){
   const links  = rotate(LINKS,  visit * LINK_ROTATE_STEP);
 
   /* tear down the previous render */
+  idleStop();
   if(loader)  loader.disconnect();
   if(tracker) tracker.disconnect();
   clearTimeout(timer);
@@ -350,17 +456,23 @@ function build(){
       cur.textContent = active + 1;
       dots.forEach((d,i)=>d.classList.toggle('on', i===active));
       if(active > 0) hint.classList.add('gone');
+      if(RESET_TIMER_ON_SWIPE && idleRunning) idleStart();
       schedule();
     });
   },{ root:reel, threshold:[0.6] });
   slides.forEach(s=>tracker.observe(s));
 
-  /* back to the top and show the hint again */
+  /* back to the top; show the swipe arrow only when no countdown is running */
   reel.scrollTop = 0;
-  hint.classList.remove('gone');
-  hintTimer = setTimeout(()=>hint.classList.add('gone'), 5000);
+  if(IDLE_REDIRECT_MS.length && LINKS.length){
+    hint.classList.add('gone');
+  }else{
+    hint.classList.remove('gone');
+    hintTimer = setTimeout(()=>hint.classList.add('gone'), 5000);
+  }
 
   schedule();
+  idleStart();
 }
 
 function go(i){
