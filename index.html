@@ -8,7 +8,6 @@
 <style>
 :root{
   --orange:#FF8C00;
-  --warm:#8B5E00;
   --bg:#0a0a0a;
   --ink:#f5f2ec;
   --muted:rgba(245,242,236,.62);
@@ -23,7 +22,6 @@ body{overflow:hidden}
   height:100dvh;
   overflow-y:scroll;
   scroll-snap-type:y mandatory;
-  scroll-behavior:auto;
   scrollbar-width:none;
 }
 #reel::-webkit-scrollbar{display:none}
@@ -66,49 +64,22 @@ body{overflow:hidden}
 .slide.loaded .skeleton{display:none}
 @keyframes shimmer{to{background-position:-120% 0}}
 
-/* ---------- caption ---------- */
-.caption{
-  position:absolute;
-  left:0;right:0;bottom:0;
-  padding:96px 76px 34px 20px;
-  background:linear-gradient(to top,rgba(0,0,0,.86) 12%,rgba(0,0,0,.45) 46%,transparent);
-  pointer-events:none;
-}
-.caption h2{
-  font-size:clamp(19px,5.2vw,25px);
-  line-height:1.22;
-  font-weight:650;
-  letter-spacing:-.015em;
-  max-width:22ch;
-  text-shadow:0 1px 14px rgba(0,0,0,.55);
-}
-.caption p{
-  margin-top:7px;
-  font-size:14px;
-  line-height:1.45;
-  color:var(--muted);
-  max-width:34ch;
-}
-.caption .tick{
-  display:inline-block;
-  width:26px;height:2px;
-  background:var(--orange);
-  margin-bottom:12px;
-}
-
-/* ---------- CTA ---------- */
+/* ---------- CTA (last slide only, optional) ---------- */
 .cta{
-  pointer-events:auto;
-  margin-top:16px;
-  display:inline-block;
-  padding:12px 22px;
+  position:absolute;
+  left:50%;
+  bottom:calc(env(safe-area-inset-bottom,0px) + 30px);
+  transform:translateX(-50%);
+  z-index:4;
+  padding:13px 26px;
   background:#111;
   color:var(--ink);
   border:1px solid var(--orange);
   border-radius:999px;
   font:inherit;font-size:15px;font-weight:600;
-  cursor:pointer;
+  white-space:nowrap;
   text-decoration:none;
+  box-shadow:0 6px 24px rgba(0,0,0,.5);
 }
 .cta:active{background:#1a1206}
 
@@ -150,18 +121,16 @@ body{overflow:hidden}
 }
 #count b{color:var(--ink);font-weight:600}
 
-/* ---------- swipe hint (first slide only) ---------- */
+/* ---------- swipe hint (arrow only) ---------- */
 #hint{
   position:fixed;
-  left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+  left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
   transform:translateX(-50%);
   z-index:6;
-  display:flex;flex-direction:column;align-items:center;gap:6px;
-  font-size:12.5px;color:var(--muted);
   transition:opacity .4s ease;
 }
 #hint.gone{opacity:0;pointer-events:none}
-#hint svg{animation:nudge 1.6s ease-in-out infinite}
+#hint svg{animation:nudge 1.6s ease-in-out infinite;filter:drop-shadow(0 2px 8px rgba(0,0,0,.6))}
 @keyframes nudge{0%,100%{transform:translateY(3px)}50%{transform:translateY(-3px)}}
 @media (prefers-reduced-motion:reduce){
   #hint svg,.slide .skeleton{animation:none}
@@ -176,41 +145,38 @@ body{overflow:hidden}
 <div id="count"><b>1</b> / <span id="total">0</span></div>
 <nav id="rail" aria-hidden="true"></nav>
 
-<div id="hint">
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF8C00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
-  <span>Swipe up</span>
+<div id="hint" aria-hidden="true">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF8C00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
 </div>
 
 <script>
 /* =========================================================
-   1. EDIT ONLY THIS BLOCK
-   Swap src for your own URLs, e.g.
-   https://instantchatroom.org/reel/01.jpg
+   1. EDIT ONLY THIS BLOCK — just image URLs now
+   e.g. "https://instantchatroom.org/reel/01.jpg"
    ========================================================= */
 const SLIDES = [
-  { src:"https://picsum.photos/id/1015/1080/1920", title:"The river bend at first light",  sub:"Slide one — replace with your own image and copy." },
-  { src:"https://picsum.photos/id/1025/1080/1920", title:"He waited by the door all week",   sub:"Every image is one full screen tall." },
-  { src:"https://picsum.photos/id/1039/1080/1920", title:"Nobody knew the trail went here",  sub:"Swipe, scroll or use the arrow keys." },
-  { src:"https://picsum.photos/id/1043/1080/1920", title:"Rooftops before the rain",         sub:"Images load two ahead so it never stalls." },
-  { src:"https://picsum.photos/id/1057/1080/1920", title:"Where the coast finally opens",    sub:"Add as many as you want to this list." },
-  { src:"https://picsum.photos/id/1069/1080/1920", title:"Last light on the way back",       sub:"The button below is on the final slide." }
+  "https://picsum.photos/id/1015/1080/1920",
+  "https://picsum.photos/id/1025/1080/1920",
+  "https://picsum.photos/id/1039/1080/1920",
+  "https://picsum.photos/id/1043/1080/1920",
+  "https://picsum.photos/id/1057/1080/1920",
+  "https://picsum.photos/id/1069/1080/1920"
 ];
 
-/* CTA on the last slide. Set URL to "" to hide it entirely. */
-const CTA = { label:"Read the full story", url:"" };
+/* CTA on the last slide. Set url to "" to hide it entirely. */
+const CTA = { label:"Continue", url:"" };
 
 /* Optional: auto-advance. 0 = off. e.g. 6000 = move on after 6s. */
 const AUTO_ADVANCE_MS = 0;
 /* ========================================================= */
 
-const reel  = document.getElementById('reel');
-const rail  = document.getElementById('rail');
-const hint  = document.getElementById('hint');
-const cur   = document.querySelector('#count b');
+const reel = document.getElementById('reel');
+const rail = document.getElementById('rail');
+const hint = document.getElementById('hint');
+const cur  = document.querySelector('#count b');
 document.getElementById('total').textContent = SLIDES.length;
 
-/* build slides */
-SLIDES.forEach((s,i)=>{
+SLIDES.forEach((src,i)=>{
   const sec = document.createElement('section');
   sec.className = 'slide';
   sec.dataset.index = i;
@@ -222,31 +188,26 @@ SLIDES.forEach((s,i)=>{
   skel.className = 'skeleton';
 
   const img = document.createElement('img');
-  img.alt = s.title || '';
+  img.alt = '';
   img.decoding = 'async';
-  img.dataset.src = s.src;
-  if(i < 2){ img.src = s.src; }          // first two load immediately
+  img.dataset.src = src;
+  if(i < 2){ img.src = src; }            // first two load immediately
   img.addEventListener('load', ()=>{
     img.classList.add('ready');
     sec.classList.add('loaded');
     back.style.backgroundImage = `url("${img.currentSrc||img.src}")`;
   });
 
-  const cap = document.createElement('div');
-  cap.className = 'caption';
-  cap.innerHTML = `<span class="tick"></span><h2></h2><p></p>`;
-  cap.querySelector('h2').textContent = s.title || '';
-  cap.querySelector('p').textContent  = s.sub || '';
+  sec.append(back, skel, img);
 
   if(CTA.url && i === SLIDES.length-1){
     const a = document.createElement('a');
     a.className = 'cta';
     a.href = CTA.url;
     a.textContent = CTA.label;
-    cap.appendChild(a);
+    sec.appendChild(a);
   }
 
-  sec.append(back, skel, img, cap);
   reel.appendChild(sec);
 
   const dot = document.createElement('i');
@@ -305,7 +266,6 @@ function schedule(){
 }
 schedule();
 
-/* hide hint after a few seconds regardless */
 setTimeout(()=>hint.classList.add('gone'), 5000);
 </script>
 </body>
