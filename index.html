@@ -77,6 +77,19 @@ body{overflow:hidden}
   cursor:pointer;
 }
 
+/* ---------- hairline countdown bar ---------- */
+#bar{
+  position:fixed;
+  top:0;left:0;
+  height:2px;
+  width:0%;
+  background:var(--orange);
+  z-index:7;
+  display:none;
+  transition:width .25s linear;
+}
+#bar.show{display:block}
+
 /* ---------- idle countdown ---------- */
 #tick{
   position:fixed;
@@ -194,6 +207,8 @@ body{overflow:hidden}
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF8C00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
 </div>
 
+<div id="bar"></div>
+
 <div id="tick" role="button" tabindex="0">
   <span class="ring">
     <svg width="24" height="24" viewBox="0 0 24 24">
@@ -263,6 +278,12 @@ const LINK_ROTATE_STEP  = 2;   /* 5 links, step 2 -> pairing changes too   */
    Set to [] to switch the idle redirect off completely. */
 const IDLE_REDIRECT_MS = [12000, 8000];
 
+/* What the visitor sees while the idle timer runs:
+   "off"  = nothing on screen
+   "bar"  = 2px orange line filling across the top
+   "pill" = circle with the seconds remaining */
+const COUNTDOWN_STYLE = "off";
+
 /* Clock keeps running while they swipe. true = restart it on every swipe. */
 const RESET_TIMER_ON_SWIPE = false;
 /* ========================================================= */
@@ -276,6 +297,7 @@ document.getElementById('total').textContent = SLIDES.length;
 /* --- how many times has this visitor already left and come back? --- */
 /* ---------- idle countdown engine ---------- */
 const tickEl  = document.getElementById('tick');
+const barEl   = document.getElementById('bar');
 const tickNum = tickEl.querySelector('.num');
 const tickArc = tickEl.querySelector('.fg');
 const ARC = 62.83;                 /* circumference of r=10 */
@@ -286,6 +308,8 @@ function idleStop(){
   idleTimer = null;
   idleRunning = false;
   tickEl.classList.remove('show');
+  barEl.classList.remove('show');
+  barEl.style.width = '0%';
 }
 
 function idleStart(){
@@ -295,7 +319,8 @@ function idleStart(){
   idleTotal = IDLE_REDIRECT_MS[Math.min(v, IDLE_REDIRECT_MS.length - 1)];
   idleLeft  = idleTotal;
   idleRunning = true;
-  tickEl.classList.add('show');
+  if(COUNTDOWN_STYLE === 'pill') tickEl.classList.add('show');
+  if(COUNTDOWN_STYLE === 'bar')  barEl.classList.add('show');
   paint();
   idleTimer = setInterval(()=>{
     if(document.hidden) return;               /* pause in a background tab */
@@ -306,8 +331,12 @@ function idleStart(){
 }
 
 function paint(){
-  tickNum.textContent = Math.ceil(idleLeft / 1000);
-  tickArc.style.strokeDashoffset = ARC * (1 - idleLeft / idleTotal);
+  if(COUNTDOWN_STYLE === 'pill'){
+    tickNum.textContent = Math.ceil(idleLeft / 1000);
+    tickArc.style.strokeDashoffset = ARC * (1 - idleLeft / idleTotal);
+  }else if(COUNTDOWN_STYLE === 'bar'){
+    barEl.style.width = (100 * (1 - idleLeft / idleTotal)) + '%';
+  }
 }
 
 function idleFire(){
@@ -462,7 +491,7 @@ function build(){
 
   /* back to the top; show the swipe arrow only when no countdown is running */
   reel.scrollTop = 0;
-  if(IDLE_REDIRECT_MS.length && LINKS.length){
+  if(IDLE_REDIRECT_MS.length && LINKS.length && COUNTDOWN_STYLE === 'pill'){
     hint.classList.add('gone');
   }else{
     hint.classList.remove('gone');
