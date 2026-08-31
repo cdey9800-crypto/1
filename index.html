@@ -81,13 +81,12 @@ body{overflow:hidden}
 #tick{
   position:fixed;
   left:50%;
-  bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+  top:calc(env(safe-area-inset-top,0px) + 12px);
   transform:translateX(-50%);
   z-index:7;
   display:none;
   align-items:center;
-  gap:9px;
-  padding:8px 15px 8px 9px;
+  padding:7px;
   background:rgba(0,0,0,.52);
   backdrop-filter:blur(8px);
   border:1px solid rgba(255,140,0,.5);
@@ -203,7 +202,6 @@ body{overflow:hidden}
     </svg>
     <span class="num">12</span>
   </span>
-  <span>Continuing to the guide</span>
 </div>
 
 <script>
