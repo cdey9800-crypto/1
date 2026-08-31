@@ -327,6 +327,26 @@ function articleName(url){
     return seg.slice(0, 60);
   } catch(e){ return url; }
 }
+/* turn "image 7.jpg" into "Image 07" and "image-07" */
+function imageLabel(url){
+  const n = imageName(url);
+  const m = n.match(/(\d+)/);
+  return m ? 'Image ' + String(m[1]).padStart(2,'0') : n.replace(/\.[^.]+$/,'');
+}
+function imageSlug(url){
+  return imageLabel(url).toLowerCase().replace(/\s+/g,'-');
+}
+
+/* report an image as if it were its own page, so it shows up in
+   Reports > Engagement > Pages and screens with no setup needed */
+function pageHit(url){
+  if(typeof window.gtag !== 'function') return;
+  window.gtag('event', 'page_view', {
+    page_title: imageLabel(url),
+    page_location: location.origin + '/' + imageSlug(url)
+  });
+}
+
 function track(name, params){
   if(typeof window.gtag !== 'function') return;
   window.gtag('event', name, Object.assign({ transport_type:'beacon' }, params || {}));
@@ -492,6 +512,10 @@ function build(){
       });
       /* count this as a visit, so the next view rotates */
       hit.addEventListener('click', ()=>{
+        track('click_' + imageSlug(src).replace(/-/g,'_'), {
+          visit_number: visit,
+          article_name: articleName(hit.href)
+        });
         track('image_click', {
           image_name:   imageName(src),
           slide_index:  i + 1,
@@ -553,6 +577,7 @@ function build(){
       viewTimer = setTimeout(()=>{
         if(idx !== active || seen.has(idx)) return;
         seen.add(idx);
+        pageHit(images[idx]);
         track('image_view', {
           image_name:   imageName(images[idx]),
           slide_index:  idx + 1,
