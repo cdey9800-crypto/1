@@ -315,17 +315,10 @@ document.getElementById('total').textContent = SLIDES.length;
    How long a slide must stay on screen before it counts as a view.
    Stops a fast swipe-past from inflating your view numbers. */
 const VIEW_DWELL_MS = 800;
-
 /* pull "image 7.jpg" out of the full URL so reports are readable */
 function imageName(url){
   try { return decodeURIComponent(url.split('/').pop()); }
   catch(e){ return url; }
-}
-function articleName(url){
-  try {
-    const seg = decodeURIComponent(url).split('/').filter(Boolean).pop() || '';
-    return seg.slice(0, 60);
-  } catch(e){ return url; }
 }
 /* turn "image 7.jpg" into "Image 07" and "image-07" */
 function imageLabel(url){
@@ -337,8 +330,8 @@ function imageSlug(url){
   return imageLabel(url).toLowerCase().replace(/\s+/g,'-');
 }
 
-/* report an image as if it were its own page, so it shows up in
-   Reports > Engagement > Pages and screens with no setup needed */
+/* report an image as its own page -> Reports > Engagement > Pages and screens.
+   Kept separate from the Events list so the two never mix. */
 function pageHit(url){
   if(typeof window.gtag !== 'function') return;
   window.gtag('event', 'page_view', {
@@ -401,20 +394,10 @@ function idleFire(){
   const link = slides[active] && slides[active].querySelector('.hit');
   if(!link) return;
   const img = slides[active].querySelector('img');
-  track('auto_redirect', {
-    image_name:   img ? imageName(img.dataset.src || img.src) : '',
-    slide_index:  active + 1,
-    visit_number: getVisit(),
-    article_name: articleName(link.href)
-  });
+  track('auto_redirect');
   bumpVisit();                                 /* so the next view rotates */
   window.location.href = link.href;
 }
-
-/* how far they got before leaving */
-window.addEventListener('pagehide', ()=>{
-  track('reel_depth', { depth: maxDepth, visit_number: getVisit() });
-});
 
 /* tapping the countdown goes straight there */
 tickEl.addEventListener('click', idleFire);
@@ -441,7 +424,7 @@ function rotate(arr, n){
 
 let slides = [], dots = [], active = 0, timer = null;
 let loader = null, tracker = null, hintTimer = null;
-let seen = new Set(), viewTimer = null, maxDepth = 1;
+let seen = new Set(), viewTimer = null;
 
 function build(){
   const visit  = getVisit();
@@ -452,8 +435,6 @@ function build(){
   idleStop();
   clearTimeout(viewTimer);
   seen = new Set();
-  maxDepth = 1;
-  track('reel_view', { visit_number: visit, total_images: images.length });
   if(loader)  loader.disconnect();
   if(tracker) tracker.disconnect();
   clearTimeout(timer);
@@ -512,16 +493,7 @@ function build(){
       });
       /* count this as a visit, so the next view rotates */
       hit.addEventListener('click', ()=>{
-        track('click_' + imageSlug(src).replace(/-/g,'_'), {
-          visit_number: visit,
-          article_name: articleName(hit.href)
-        });
-        track('image_click', {
-          image_name:   imageName(src),
-          slide_index:  i + 1,
-          visit_number: visit,
-          article_name: articleName(hit.href)
-        });
+        track('click_' + imageSlug(src).replace(/-/g,'_'));
         bumpVisit();
       });
       sec.appendChild(hit);
@@ -569,7 +541,6 @@ function build(){
       cur.textContent = active + 1;
       dots.forEach((d,i)=>d.classList.toggle('on', i===active));
       if(active > 0) hint.classList.add('gone');
-      if(active + 1 > maxDepth) maxDepth = active + 1;
 
       /* count a view only after the slide has been held on screen */
       clearTimeout(viewTimer);
@@ -578,11 +549,6 @@ function build(){
         if(idx !== active || seen.has(idx)) return;
         seen.add(idx);
         pageHit(images[idx]);
-        track('image_view', {
-          image_name:   imageName(images[idx]),
-          slide_index:  idx + 1,
-          visit_number: visit
-        });
       }, VIEW_DWELL_MS);
 
       if(RESET_TIMER_ON_SWIPE && idleRunning) idleStart();
